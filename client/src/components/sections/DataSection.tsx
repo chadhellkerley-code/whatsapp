@@ -282,20 +282,6 @@ export default function DataSection() {
           </motion.div>
         </>
       )}
-                    <td className="py-3 px-4 text-muted-foreground">{activity.desc}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{activity.date}</td>
-                    <td className="py-3 px-4">
-                      <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400">
-                        {activity.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </motion.div>
     </div>
   );
 }

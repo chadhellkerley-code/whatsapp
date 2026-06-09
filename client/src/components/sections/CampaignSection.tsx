@@ -1,52 +1,57 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Send, Clock, Users, Megaphone } from "lucide-react";
+import { Plus, Send, Clock, Users, Megaphone, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-
-interface Campaign {
-  id: string;
-  name: string;
-  message: string;
-  recipients: number;
-  status: "draft" | "scheduled" | "sent" | "sending";
-  createdAt: string;
-}
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 export default function CampaignSection() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([
-    {
-      id: "1",
-      name: "Bienvenida Clientes",
-      message: "Hola! Gracias por tu interes en nuestros servicios.",
-      recipients: 150,
-      status: "sent",
-      createdAt: "Hace 3 dias",
-    },
-  ]);
   const [newCampaign, setNewCampaign] = useState({
     name: "",
     message: "",
-    recipients: "",
+    targetNumbers: "",
   });
   const [open, setOpen] = useState(false);
 
-  const addCampaign = () => {
-    if (newCampaign.name.trim() && newCampaign.message.trim()) {
-      const campaign: Campaign = {
-        id: Date.now().toString(),
+  const utils = trpc.useUtils();
+  const { data: campaigns = [], isLoading } = trpc.whatsapp.listCampaigns.useQuery();
+  
+  const createMutation = trpc.whatsapp.createCampaign.useMutation({
+    onSuccess: () => {
+      toast.success("Campaña creada correctamente");
+      setNewCampaign({ name: "", message: "", targetNumbers: "" });
+      setOpen(false);
+      utils.whatsapp.listCampaigns.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al crear campaña");
+    },
+  });
+
+  const statusMutation = trpc.whatsapp.updateCampaignStatus.useMutation({
+    onSuccess: () => {
+      toast.success("Estado actualizado");
+      utils.whatsapp.listCampaigns.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al actualizar estado");
+    },
+  });
+
+  const addCampaign = async () => {
+    if (newCampaign.name.trim() && newCampaign.message.trim() && newCampaign.targetNumbers.trim()) {
+      const numbers = newCampaign.targetNumbers.split(",").map((n) => n.trim());
+      await createMutation.mutateAsync({
         name: newCampaign.name,
         message: newCampaign.message,
-        recipients: parseInt(newCampaign.recipients) || 0,
-        status: "draft",
-        createdAt: "Ahora",
-      };
-      setCampaigns([...campaigns, campaign]);
-      setNewCampaign({ name: "", message: "", recipients: "" });
-      setOpen(false);
+        targetNumbers: numbers,
+      });
+    } else {
+      toast.error("Por favor completa todos los campos");
     }
   };
 
@@ -67,18 +72,28 @@ export default function CampaignSection() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "sent":
-        return "Enviada";
-      case "sending":
-        return "Enviando";
+      case "completed":
+        return "Completada";
+      case "running":
+        return "En ejecución";
       case "scheduled":
         return "Programada";
       case "draft":
         return "Borrador";
+      case "failed":
+        return "Fallida";
       default:
         return "Desconocida";
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-green-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -130,22 +145,30 @@ export default function CampaignSection() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Numero de Destinatarios</label>
-                <Input
-                  type="number"
-                  placeholder="100"
-                  value={newCampaign.recipients}
+                <label className="text-sm font-medium">Numeros Destino (separados por coma)</label>
+                <Textarea
+                  placeholder="+34 123 456 789, +34 987 654 321"
+                  value={newCampaign.targetNumbers}
                   onChange={(e) =>
-                    setNewCampaign({ ...newCampaign, recipients: e.target.value })
+                    setNewCampaign({ ...newCampaign, targetNumbers: e.target.value })
                   }
                   className="mt-1 bg-secondary border-border"
+                  rows={3}
                 />
               </div>
               <Button
                 onClick={addCampaign}
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                disabled={createMutation.isPending || !newCampaign.name.trim() || !newCampaign.message.trim()}
+                className="w-full bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
               >
-                Crear Campana
+                {createMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creando...
+                  </>
+                ) : (
+                  "Crear Campana"
+                )}
               </Button>
             </div>
           </DialogContent>
@@ -175,20 +198,26 @@ export default function CampaignSection() {
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Users className="w-4 h-4" />
-                      {campaign.recipients} destinatarios
+                      {campaign.targetNumbers?.length || 0} destinatarios
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
-                      {campaign.createdAt}
+                      {new Date(campaign.createdAt).toLocaleDateString()}
                     </div>
                   </div>
                 </div>
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
-                  className="p-2 hover:bg-green-500/10 rounded-lg transition-colors"
+                  onClick={() => statusMutation.mutate({ campaignId: campaign.id, status: "running" })}
+                  disabled={statusMutation.isPending || campaign.status === "running"}
+                  className="p-2 hover:bg-green-500/10 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  <Send className="w-5 h-5 text-green-500" />
+                  {statusMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-green-500" />
+                  ) : (
+                    <Send className="w-5 h-5 text-green-500" />
+                  )}
                 </motion.button>
               </div>
             </Card>

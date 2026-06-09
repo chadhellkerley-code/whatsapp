@@ -1,51 +1,54 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2, CheckCircle, AlertCircle, Phone } from "lucide-react";
+import { Plus, Trash2, CheckCircle, AlertCircle, Phone, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-
-interface PhoneNumber {
-  id: string;
-  number: string;
-  name: string;
-  status: "connected" | "disconnected" | "pending";
-  lastActive: string;
-}
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 export default function PhoneManagement() {
-  const [phones, setPhones] = useState<PhoneNumber[]>([
-    {
-      id: "1",
-      number: "+34 123 456 789",
-      name: "Numero Principal",
-      status: "connected",
-      lastActive: "Hace 2 minutos",
-    },
-  ]);
   const [newPhone, setNewPhone] = useState("");
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
 
-  const addPhone = () => {
-    if (newPhone.trim()) {
-      const phone: PhoneNumber = {
-        id: Date.now().toString(),
-        number: newPhone,
-        name: newName || "Nuevo Numero",
-        status: "pending",
-        lastActive: "Nunca",
-      };
-      setPhones([...phones, phone]);
+  const utils = trpc.useUtils();
+  const { data: phones = [], isLoading } = trpc.whatsapp.listNumbers.useQuery();
+  const addMutation = trpc.whatsapp.addNumber.useMutation({
+    onSuccess: () => {
+      toast.success("Número agregado correctamente");
       setNewPhone("");
       setNewName("");
       setOpen(false);
+      utils.whatsapp.listNumbers.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al agregar número");
+    },
+  });
+
+  const deleteMutation = trpc.whatsapp.deleteNumber.useMutation({
+    onSuccess: () => {
+      toast.success("Número eliminado");
+      utils.whatsapp.listNumbers.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Error al eliminar número");
+    },
+  });
+
+  const addPhone = async () => {
+    if (newPhone.trim()) {
+      await addMutation.mutateAsync({
+        phoneNumber: newPhone,
+        sessionName: newName || `Session_${Date.now()}`,
+      });
     }
   };
 
-  const deletePhone = (id: string) => {
-    setPhones(phones.filter((p) => p.id !== id));
+  const deletePhone = (id: number) => {
+    deleteMutation.mutate({ numberId: id });
   };
 
   const getStatusColor = (status: string) => {
@@ -73,6 +76,14 @@ export default function PhoneManagement() {
         return "Desconocido";
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-green-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -120,9 +131,17 @@ export default function PhoneManagement() {
               </div>
               <Button
                 onClick={addPhone}
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                disabled={addMutation.isPending || !newPhone.trim()}
+                className="w-full bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
               >
-                Agregar
+                {addMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Agregando...
+                  </>
+                ) : (
+                  "Agregar"
+                )}
               </Button>
             </div>
           </DialogContent>
@@ -145,29 +164,36 @@ export default function PhoneManagement() {
                     <Phone className="w-6 h-6 text-white" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-foreground">{phone.name}</h3>
-                    <p className="text-sm text-muted-foreground">{phone.number}</p>
+                    <h3 className="font-semibold text-foreground">{phone.sessionName}</h3>
+                    <p className="text-sm text-muted-foreground">{phone.phoneNumber}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <div className={`flex items-center gap-2 ${getStatusColor(phone.status)}`}>
-                      {phone.status === "connected" ? (
+                    <div className={`flex items-center gap-2 ${getStatusColor(phone.connectionStatus)}`}>
+                      {phone.isConnected ? (
                         <CheckCircle className="w-4 h-4" />
                       ) : (
                         <AlertCircle className="w-4 h-4" />
                       )}
-                      <span className="text-sm font-medium">{getStatusLabel(phone.status)}</span>
+                      <span className="text-sm font-medium">{getStatusLabel(phone.connectionStatus)}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{phone.lastActive}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {phone.lastActivity ? new Date(phone.lastActivity).toLocaleDateString() : "Nunca"}
+                    </p>
                   </div>
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={() => deletePhone(phone.id)}
-                    className="p-2 hover:bg-red-500/10 rounded-lg transition-colors"
+                    disabled={deleteMutation.isPending}
+                    className="p-2 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
                   >
-                    <Trash2 className="w-5 h-5 text-red-500" />
+                    {deleteMutation.isPending ? (
+                      <Loader2 className="w-5 h-5 animate-spin text-red-500" />
+                    ) : (
+                      <Trash2 className="w-5 h-5 text-red-500" />
+                    )}
                   </motion.button>
                 </div>
               </div>

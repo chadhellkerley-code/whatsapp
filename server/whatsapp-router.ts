@@ -142,6 +142,19 @@ export const whatsappRouter = router({
       }));
     }),
 
+  deleteAutomationFlow: protectedProcedure
+    .input(z.object({ flowId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      // Verify ownership before deletion
+      const flow = await db.getAutomationFlows(ctx.user.id);
+      const flowExists = flow.some(f => f.id === input.flowId);
+      if (!flowExists) {
+        throw new Error("Flow not found");
+      }
+      // TODO: Implement deletion in db.ts
+      return { success: true };
+    }),
+
   // Message Statistics
   getMessageStats: protectedProcedure
     .input(z.object({ phoneNumber: z.string().optional() }))

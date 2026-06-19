@@ -1,14 +1,9 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "name": "whatsapp-manager",
-  "public": false,
   "buildCommand": "pnpm build",
   "outputDirectory": "dist/public",
-  "env": {
-    "NODE_ENV": "production",
-    "VITE_API_URL": "@vite_api_url"
-  },
-  "envFile": ".env.production",
   "headers": [
     {
       "source": "/assets/(.*)",

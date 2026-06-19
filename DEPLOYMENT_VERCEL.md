@@ -13,11 +13,13 @@ VITE_API_URL=https://tu-backend-api.com/api/trpc
 ```
 
 Reemplaza `https://tu-backend-api.com` con la URL real de tu backend (Render, Railway, Fly.io, etc.)
+No las declares en `vercel.json`; Vercel las gestiona desde el panel del proyecto.
 
 ### 2. Build y Output Directory
 
 - **Build Command**: `pnpm build` (esto compila tanto frontend como backend)
 - **Output Directory**: `dist/public` (Vercel solo sirve esta carpeta)
+- La configuración de Vercel debe quedarse en propiedades válidas del esquema. No uses `public`, `env` ni `envFile` en `vercel.json`.
 
 ### 3. Archivos ignorados
 

@@ -1,7 +1,8 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, openwaConfigs, whatsappNumbers, campaigns, automationFlows, messageStats, messageLog } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { decryptSecret, encryptSecret } from "./_core/secrets";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -96,10 +97,10 @@ export async function saveOpenwaConfig(userId: number, apiKey: string, apiUrl: s
 
   return db.insert(openwaConfigs).values({
     userId,
-    apiKey,
+    apiKey: encryptSecret(apiKey) ?? apiKey,
     apiUrl,
   }).onDuplicateKeyUpdate({
-    set: { apiKey, apiUrl, updatedAt: new Date() },
+    set: { apiKey: encryptSecret(apiKey) ?? apiKey, apiUrl, updatedAt: new Date() },
   });
 }
 
@@ -111,11 +112,21 @@ export async function getOpenwaConfig(userId: number) {
     .where(and(eq(openwaConfigs.userId, userId), eq(openwaConfigs.isActive, true)))
     .limit(1);
 
-  return result.length > 0 ? result[0] : undefined;
+  if (result.length === 0) return undefined;
+  const config = result[0];
+  return {
+    ...config,
+    apiKey: decryptSecret(config.apiKey) ?? config.apiKey,
+  };
 }
 
 // WhatsApp Numbers functions
-export async function addWhatsappNumber(userId: number, phoneNumber: string, sessionName: string) {
+export async function addWhatsappNumber(
+  userId: number,
+  phoneNumber: string,
+  sessionName: string,
+  openwaSessionId?: string | null
+) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -123,6 +134,7 @@ export async function addWhatsappNumber(userId: number, phoneNumber: string, ses
     userId,
     phoneNumber,
     sessionName,
+    openwaSessionId: openwaSessionId ?? null,
   });
 }
 
@@ -131,6 +143,54 @@ export async function getWhatsappNumbers(userId: number) {
   if (!db) return [];
 
   return db.select().from(whatsappNumbers).where(eq(whatsappNumbers.userId, userId));
+}
+
+export async function getWhatsappNumberById(userId: number, numberId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(whatsappNumbers)
+    .where(and(eq(whatsappNumbers.userId, userId), eq(whatsappNumbers.id, numberId)))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function getWhatsappNumberBySessionId(userId: number, sessionId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(whatsappNumbers)
+    .where(and(eq(whatsappNumbers.userId, userId), eq(whatsappNumbers.openwaSessionId, sessionId)))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function getWhatsappNumberBySessionIdGlobal(sessionId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(whatsappNumbers)
+    .where(eq(whatsappNumbers.openwaSessionId, sessionId))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function updateWhatsappNumberSessionId(numberId: number, openwaSessionId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.update(whatsappNumbers)
+    .set({ openwaSessionId, updatedAt: new Date() })
+    .where(eq(whatsappNumbers.id, numberId));
 }
 
 export async function updateWhatsappNumberStatus(numberId: number, isConnected: boolean, status: string) {
@@ -167,7 +227,11 @@ export async function getCampaigns(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(campaigns).where(eq(campaigns.userId, userId));
+  return db
+    .select()
+    .from(campaigns)
+    .where(eq(campaigns.userId, userId))
+    .orderBy(desc(campaigns.createdAt));
 }
 
 export async function updateCampaignStatus(campaignId: number, status: string) {
@@ -207,7 +271,7 @@ export async function createAutomationFlow(
     triggerKeywords: JSON.stringify(triggerKeywords),
     responseType: responseType as any,
     staticResponse,
-    geminiApiKey,
+    geminiApiKey: geminiApiKey ? encryptSecret(geminiApiKey) ?? geminiApiKey : undefined,
     geminiPrompt,
   });
 }
@@ -216,17 +280,42 @@ export async function getAutomationFlows(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(automationFlows)
-    .where(and(eq(automationFlows.userId, userId), eq(automationFlows.isActive, true)));
+  const flows = await db
+    .select()
+    .from(automationFlows)
+    .where(
+      and(
+        eq(automationFlows.userId, userId),
+        eq(automationFlows.isActive, true)
+      )
+    )
+    .orderBy(desc(automationFlows.createdAt));
+
+  return flows.map(flow => ({
+    ...flow,
+    geminiApiKey: flow.geminiApiKey ? (decryptSecret(flow.geminiApiKey) ?? flow.geminiApiKey) : null,
+  }));
 }
 
 export async function updateAutomationFlow(flowId: number, updates: any) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  const normalizedUpdates = { ...updates };
+  if (typeof normalizedUpdates.geminiApiKey === "string") {
+    normalizedUpdates.geminiApiKey = encryptSecret(normalizedUpdates.geminiApiKey) ?? normalizedUpdates.geminiApiKey;
+  }
+
   return db.update(automationFlows)
-    .set({ ...updates, updatedAt: new Date() })
+    .set({ ...normalizedUpdates, updatedAt: new Date() })
     .where(eq(automationFlows.id, flowId));
+}
+
+export async function deleteAutomationFlow(flowId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return db.delete(automationFlows).where(eq(automationFlows.id, flowId));
 }
 
 // Message Stats functions
@@ -287,11 +376,20 @@ export async function getMessageStats(userId: number, phoneNumber?: string) {
   if (!db) return [];
 
   if (phoneNumber) {
-    return db.select().from(messageStats)
-      .where(and(eq(messageStats.userId, userId), eq(messageStats.phoneNumber, phoneNumber)));
+    return db
+      .select()
+      .from(messageStats)
+      .where(
+        and(eq(messageStats.userId, userId), eq(messageStats.phoneNumber, phoneNumber))
+      )
+      .orderBy(desc(messageStats.date));
   }
 
-  return db.select().from(messageStats).where(eq(messageStats.userId, userId));
+  return db
+    .select()
+    .from(messageStats)
+    .where(eq(messageStats.userId, userId))
+    .orderBy(desc(messageStats.date));
 }
 
 // Message Log functions
@@ -325,10 +423,18 @@ export async function getMessageLog(userId: number, phoneNumber?: string, limit:
   if (!db) return [];
 
   if (phoneNumber) {
-    return db.select().from(messageLog)
+    return db
+      .select()
+      .from(messageLog)
       .where(and(eq(messageLog.userId, userId), eq(messageLog.phoneNumber, phoneNumber)))
+      .orderBy(desc(messageLog.createdAt))
       .limit(limit);
   }
 
-  return db.select().from(messageLog).where(eq(messageLog.userId, userId)).limit(limit);
+  return db
+    .select()
+    .from(messageLog)
+    .where(eq(messageLog.userId, userId))
+    .orderBy(desc(messageLog.createdAt))
+    .limit(limit);
 }

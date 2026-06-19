@@ -1,287 +1,328 @@
 import { motion } from "framer-motion";
-import { BarChart3, Download, TrendingUp, MessageSquare, Users, Clock, Loader2 } from "lucide-react";
+import {
+  BarChart3,
+  Download,
+  Loader2,
+  MessageSquare,
+  TrendingUp,
+  Users,
+  Clock,
+  Smartphone,
+  MessageCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
+  LineChart,
+  Line,
 } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
-const COLORS = ["#10b981", "#3b82f6", "#ef4444"];
+const COLORS = ["#10b981", "#3b82f6", "#ef4444", "#a855f7"];
 
 export default function DataSection() {
-  const { data: phones = [], isLoading: phonesLoading } = trpc.whatsapp.listNumbers.useQuery();
-  const { data: campaigns = [], isLoading: campaignsLoading } = trpc.whatsapp.listCampaigns.useQuery();
+  const { data: dashboard, isLoading: dashboardLoading } =
+    trpc.whatsapp.getDashboardStats.useQuery();
+  const { data: phones = [], isLoading: phonesLoading } =
+    trpc.whatsapp.listNumbers.useQuery();
+  const { data: campaigns = [], isLoading: campaignsLoading } =
+    trpc.whatsapp.listCampaigns.useQuery();
+  const { data: stats = [], isLoading: statsLoading } =
+    trpc.whatsapp.getMessageStats.useQuery({});
+  const { data: logs = [], isLoading: logsLoading } = trpc.whatsapp.getMessageLog.useQuery(
+    { limit: 12 }
+  );
 
-  // Generate chart data from actual data
-  const messageData = [
-    { date: "Lun", enviados: 0, recibidos: 0 },
-    { date: "Mar", enviados: 0, recibidos: 0 },
-    { date: "Mie", enviados: 0, recibidos: 0 },
-    { date: "Jue", enviados: 0, recibidos: 0 },
-    { date: "Vie", enviados: 0, recibidos: 0 },
-    { date: "Sab", enviados: 0, recibidos: 0 },
-    { date: "Dom", enviados: 0, recibidos: 0 },
-  ];
+  const messageChartData = phones.map((phone) => {
+    const stat = stats.find((entry) => entry.phoneNumber === phone.phoneNumber);
+    return {
+      label: phone.sessionName,
+      sent: stat?.totalSent ?? 0,
+      received: stat?.totalReceived ?? 0,
+      automated: stat?.automatedResponses ?? 0,
+    };
+  });
 
   const campaignStats = [
-    { name: "Completadas", value: campaigns.filter(c => c.status === "completed").length || 0 },
-    { name: "En Progreso", value: campaigns.filter(c => c.status === "running").length || 0 },
-    { name: "Fallidas", value: campaigns.filter(c => c.status === "failed").length || 0 },
+    { name: "Completadas", value: campaigns.filter((c) => c.status === "completed").length },
+    { name: "En ejecución", value: campaigns.filter((c) => c.status === "running").length },
+    { name: "Fallidas", value: campaigns.filter((c) => c.status === "failed").length },
+    { name: "Borrador", value: campaigns.filter((c) => c.status === "draft").length },
   ];
 
-  const stats = [
+  const statsCards = [
     {
-      label: "Numeros Conectados",
-      value: phones.filter(p => p.isConnected).length.toString(),
-      icon: MessageSquare,
-      color: "from-green-500 to-emerald-600",
+      label: "Números conectados",
+      value: String(dashboard?.connectedNumbers ?? phones.filter((p) => p.isConnected).length),
+      icon: Smartphone,
+      gradient: "from-emerald-500 to-teal-600",
     },
     {
-      label: "Total de Numeros",
-      value: phones.length.toString(),
-      icon: Users,
-      color: "from-blue-500 to-cyan-600",
+      label: "Mensajes totales",
+      value: String(dashboard?.totalMessages ?? 0),
+      icon: MessageCircle,
+      gradient: "from-blue-500 to-cyan-600",
     },
     {
-      label: "Campanas Completadas",
-      value: campaigns.filter(c => c.status === "completed").length.toString(),
+      label: "Respuestas automáticas",
+      value: String(dashboard?.automatedResponses ?? 0),
       icon: TrendingUp,
-      color: "from-purple-500 to-pink-600",
+      gradient: "from-purple-500 to-pink-600",
     },
     {
-      label: "Campanas Totales",
-      value: campaigns.length.toString(),
+      label: "Campañas activas",
+      value: String(dashboard?.activeCampaigns ?? 0),
       icon: Clock,
-      color: "from-orange-500 to-red-600",
+      gradient: "from-orange-500 to-red-600",
     },
   ];
 
   const exportData = () => {
     const data = {
       exportDate: new Date().toISOString(),
-      stats: {
-        connectedNumbers: phones.filter(p => p.isConnected).length,
-        totalNumbers: phones.length,
-        completedCampaigns: campaigns.filter(c => c.status === "completed").length,
-        totalCampaigns: campaigns.length,
-      },
-      phones: phones.map(p => ({
-        phoneNumber: p.phoneNumber,
-        sessionName: p.sessionName,
-        isConnected: p.isConnected,
-        lastActivity: p.lastActivity,
-      })),
-      campaigns: campaigns.map(c => ({
-        name: c.name,
-        status: c.status,
-        targetCount: c.targetNumbers?.length || 0,
-        sentCount: c.sentCount,
-        failedCount: c.failedCount,
-      })),
+      dashboard,
+      phones,
+      campaigns,
+      messageStats: stats,
+      logs,
     };
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `whatsapp-data-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    toast.success("Datos exportados correctamente");
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `whatsapp-export-${new Date().toISOString().split("T")[0]}.json`;
+    anchor.click();
+    toast.success("Datos exportados");
   };
+
+  const loading = dashboardLoading || phonesLoading || campaignsLoading || statsLoading || logsLoading;
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <motion.div
-        initial={{ opacity: 0, y: -20 }}
+        initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"
       >
         <div>
           <h2 className="text-3xl font-bold text-foreground">Datos & Analytics</h2>
-          <p className="text-muted-foreground mt-1">Visualiza estadisticas y gestiona tus datos</p>
+          <p className="mt-1 text-muted-foreground">
+            Métricas reales, exportación y registros recientes de WhatsApp.
+          </p>
         </div>
-        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-          <Button
-            onClick={exportData}
-            className="bg-green-600 hover:bg-green-700 text-white gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Exportar Datos
-          </Button>
-        </motion.div>
+        <Button onClick={exportData} className="gap-2 bg-emerald-500 text-black hover:bg-emerald-400">
+          <Download className="h-4 w-4" />
+          Exportar datos
+        </Button>
       </motion.div>
 
-      {phonesLoading || campaignsLoading ? (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-green-500" />
-        </div>
-      ) : (
-        <>
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {stats.map((stat, index) => {
-              const Icon = stat.icon;
-              return (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <Card className="bg-card border-border p-4 hover:shadow-lg hover:shadow-green-500/10 transition-all duration-300">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-sm text-muted-foreground">{stat.label}</p>
-                        <p className="text-2xl font-bold text-foreground mt-2">{stat.value}</p>
-                      </div>
-                      <div className={`w-12 h-12 bg-gradient-to-br ${stat.color} rounded-lg flex items-center justify-center`}>
-                        <Icon className="w-6 h-6 text-white" />
-                      </div>
-                    </div>
-                  </Card>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Messages Chart */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {statsCards.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              key={stat.label}
+              initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="lg:col-span-2"
+              transition={{ delay: index * 0.05 }}
             >
-              <Card className="bg-card border-border p-4">
-                <h3 className="font-semibold text-foreground mb-4">Mensajes por Dia</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={messageData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="date" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#1f2937",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    <Legend />
-                    <Bar dataKey="enviados" fill="#10b981" radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="recibidos" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Card>
-            </motion.div>
-
-            {/* Campaign Status Pie Chart */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Card className="bg-card border-border p-4">
-                <h3 className="font-semibold text-foreground mb-4">Estado Campanas</h3>
-                {campaignStats.some(s => s.value > 0) ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={campaignStats}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {campaignStats.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#1f2937",
-                          border: "1px solid #374151",
-                          borderRadius: "8px",
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    Sin campanas aun
+              <Card className="border-border bg-card p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">{stat.label}</p>
+                    <p className="mt-2 text-3xl font-bold text-foreground">
+                      {stat.value}
+                    </p>
                   </div>
-                )}
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${stat.gradient}`}>
+                    <Icon className="h-6 w-6 text-white" />
+                  </div>
+                </div>
               </Card>
             </motion.div>
-          </div>
+          );
+        })}
+      </div>
 
-          {/* Campaigns Summary */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
-            <Card className="bg-card border-border p-4">
-              <h3 className="font-semibold text-foreground mb-4">Campanas Recientes</h3>
-              {campaigns.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-2 px-4 text-muted-foreground">Nombre</th>
-                        <th className="text-left py-2 px-4 text-muted-foreground">Estado</th>
-                        <th className="text-left py-2 px-4 text-muted-foreground">Destinatarios</th>
-                        <th className="text-left py-2 px-4 text-muted-foreground">Enviados</th>
-                        <th className="text-left py-2 px-4 text-muted-foreground">Fecha</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {campaigns.slice(0, 5).map((campaign, index) => (
-                        <tr key={index} className="border-b border-border hover:bg-secondary/50 transition-colors">
-                          <td className="py-3 px-4 text-foreground font-medium">{campaign.name}</td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              campaign.status === "completed" ? "bg-green-500/20 text-green-400" :
-                              campaign.status === "running" ? "bg-blue-500/20 text-blue-400" :
-                              campaign.status === "failed" ? "bg-red-500/20 text-red-400" :
-                              "bg-gray-500/20 text-gray-400"
-                            }`}>
-                              {campaign.status}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground">{campaign.targetNumbers?.length || 0}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{campaign.sentCount}</td>
-                          <td className="py-3 px-4 text-muted-foreground text-xs">{new Date(campaign.createdAt).toLocaleDateString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_.75fr]">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <Card className="border-border bg-card p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-emerald-400" />
+              <h3 className="font-semibold text-foreground">
+                Mensajes por cuenta
+              </h3>
+            </div>
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={messageChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="label" stroke="#94a3b8" />
+                <YAxis stroke="#94a3b8" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#0f172a",
+                    border: "1px solid #334155",
+                    borderRadius: "12px",
+                  }}
+                />
+                <Bar dataKey="sent" fill="#10b981" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="received" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="automated" fill="#a855f7" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          <Card className="border-border bg-card p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-emerald-400" />
+              <h3 className="font-semibold text-foreground">Estado campañas</h3>
+            </div>
+            {campaignStats.some((item) => item.value > 0) ? (
+              <ResponsiveContainer width="100%" height={320}>
+                <PieChart>
+                  <Pie
+                    data={campaignStats}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={88}
+                    dataKey="value"
+                  >
+                    {campaignStats.map((entry, index) => (
+                      <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#0f172a",
+                      border: "1px solid #334155",
+                      borderRadius: "12px",
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[320px] items-center justify-center text-muted-foreground">
+                Sin campañas todavía
+              </div>
+            )}
+          </Card>
+        </motion.div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[.9fr_1.1fr]">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card className="border-border bg-card p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <Users className="h-5 w-5 text-emerald-400" />
+              <h3 className="font-semibold text-foreground">
+                Campañas recientes
+              </h3>
+            </div>
+            <div className="space-y-3">
+              {campaigns.slice(0, 5).map((campaign) => (
+                <div
+                  key={campaign.id}
+                  className="rounded-2xl border border-border bg-secondary/20 p-4"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-foreground">{campaign.name}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {campaign.targetNumbers?.length || 0} destinatarios
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">
+                      {campaign.status}
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">No hay campanas aun</div>
+              ))}
+              {campaigns.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-border py-8 text-center text-muted-foreground">
+                  No hay campañas aún
+                </div>
               )}
-            </Card>
-          </motion.div>
-        </>
-      )}
+            </div>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+        >
+          <Card className="border-border bg-card p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-emerald-400" />
+              <h3 className="font-semibold text-foreground">Registro reciente</h3>
+            </div>
+            <div className="space-y-3">
+              {logs.map((log) => (
+                <div
+                  key={log.id}
+                  className="rounded-2xl border border-border bg-secondary/20 p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {log.contactNumber}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                        {log.message}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">
+                      {log.direction}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {logs.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-border py-8 text-center text-muted-foreground">
+                  Todavía no hay mensajes registrados
+                </div>
+              )}
+            </div>
+          </Card>
+        </motion.div>
+      </div>
     </div>
   );
 }

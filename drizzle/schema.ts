@@ -29,7 +29,7 @@ export type InsertUser = typeof users.$inferInsert;
 
 export const openwaConfigs = mysqlTable("openwa_configs", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: int("userId").notNull().unique(),
   apiKey: varchar("apiKey", { length: 500 }).notNull(),
   apiUrl: varchar("apiUrl", { length: 500 }).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
@@ -45,6 +45,7 @@ export const whatsappNumbers = mysqlTable("whatsapp_numbers", {
   userId: int("userId").notNull(),
   phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
   sessionName: varchar("sessionName", { length: 100 }).notNull(),
+  openwaSessionId: varchar("openwaSessionId", { length: 100 }),
   isConnected: boolean("isConnected").default(false).notNull(),
   connectionStatus: varchar("connectionStatus", { length: 50 }).default("disconnected").notNull(),
   lastActivity: timestamp("lastActivity"),

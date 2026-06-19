@@ -12,19 +12,19 @@ type Section = "phones" | "campaigns" | "automation" | "data";
 const sections = [
   {
     id: "phones" as Section,
-    label: "Gestion de Numeros",
+    label: "Cuentas WP",
     icon: Phone,
     color: "from-green-500 to-emerald-600",
   },
   {
     id: "campaigns" as Section,
-    label: "Campanas",
+    label: "Campañas",
     icon: Megaphone,
     color: "from-green-400 to-emerald-500",
   },
   {
     id: "automation" as Section,
-    label: "Automatizacion IA",
+    label: "IA & Automatización",
     icon: Zap,
     color: "from-green-600 to-emerald-700",
   },
